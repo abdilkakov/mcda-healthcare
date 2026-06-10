@@ -2,29 +2,75 @@
 // Dashboard View
 // ============================================
 
-import { patients } from '../data/mockData.js';
+import { getPatients, getNotifications, markAllNotificationsRead } from '../api/client.js';
 import { riskBadgeClass, riskLabel } from '../utils/mcdaEngine.js';
 import { showToast, showCriticalPatientsModal } from '../components/notifications.js';
 
+let patients = [];
+let stats = { total: 0, critical: 0, stable: 0, moderate: 0 };
+
+/**
+ * Build two-letter initials from a full name for avatar display.
+ */
 function getInitials(name) {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 }
 
-function getStats() {
-  const total = patients.length;
-  let critical = 0, stable = 0, moderate = 0;
-  patients.forEach(p => {
-    const r = p.mcdaResult?.risk_level;
-    if (r === 'Critical' || r === 'High') critical++;
-    else if (r === 'Stable' || r === 'Low') stable++;
-    else moderate++;
-  });
-  return { total, critical, stable, moderate };
+/**
+ * Render patient table rows for the dashboard.
+ */
+function renderRows(list) {
+  return list.map((p, i) => {
+    const r = p.mcdaResult;
+    const risk = r?.risk_level || 'N/A';
+    const score = r?.total_score ?? '—';
+    const a = p.assessment || {};
+    const isCritical = risk === 'Critical' || risk === 'High';
+    return `
+      <tr class="${isCritical ? 'row-critical' : ''}" data-id="${p.id}" style="cursor:pointer;">
+        <td style="color:var(--text-muted);font-size:0.8rem;">${String(i + 1).padStart(2, '0')}</td>
+        <td>
+          <div class="patient-info">
+            <div class="patient-avatar" style="background:${p.color || '#3b82f6'}">${getInitials(p.full_name)}</div>
+            <div>
+              <div class="patient-name">${p.full_name}</div>
+              <div class="patient-id">#PAT_${String(p.id).padStart(3, '0')}</div>
+            </div>
+          </div>
+        </td>
+        <td>${a.blood_pressure || '—'}</td>
+        <td style="color:${a.temperature >= 38 ? 'var(--risk-high)' : 'inherit'}">${a.temperature || '—'}</td>
+        <td style="color:${a.pulse >= 100 ? 'var(--risk-moderate)' : 'inherit'}">${a.pulse || '—'}</td>
+        <td style="color:${a.oxygen <= 92 ? 'var(--risk-critical)' : 'inherit'}">${a.oxygen ? a.oxygen + '%' : '—'}</td>
+        <td>
+          <span class="score-cell" style="color:${scoreColor(score)}">${score}</span>
+          <span style="color:var(--text-muted);font-size:0.7rem;">/100</span>
+        </td>
+        <td><span class="badge ${riskBadgeClass(risk)}">${riskLabel(risk)}</span></td>
+        <td style="text-align:center;"><i class="fa-solid fa-eye"></i></td>
+      </tr>
+    `;
+  }).join('');
 }
 
-export function renderDashboard() {
-  const stats = getStats();
-  const user = JSON.parse(sessionStorage.getItem('mcda_user') || '{}');
+/**
+ * Map numeric score to a CSS colour variable name.
+ */
+function scoreColor(s) {
+  if (typeof s !== 'number') return 'var(--text-muted)';
+  if (s >= 75) return 'var(--risk-critical)';
+  if (s >= 55) return 'var(--risk-high)';
+  if (s >= 35) return 'var(--risk-moderate)';
+  return 'var(--risk-low)';
+}
+
+/**
+ * Fetch patients from API and render the dashboard HTML.
+ */
+export async function renderDashboard() {
+  const data = await getPatients();
+  patients = data.patients;
+  stats = data.stats;
 
   return `
     <div class="dashboard-page">
@@ -108,72 +154,31 @@ export function renderDashboard() {
   `;
 }
 
-function renderRows(list) {
-  return list.map((p, i) => {
-    const r = p.mcdaResult;
-    const risk = r?.risk_level || 'N/A';
-    const score = r?.total_score ?? '—';
-    const a = p.assessment || {};
-    const isCritical = risk === 'Critical' || risk === 'High';
-    return `
-      <tr class="${isCritical ? 'row-critical' : ''}" data-id="${p.id}" style="cursor:pointer;">
-        <td style="color:var(--text-muted);font-size:0.8rem;">${String(i + 1).padStart(2, '0')}</td>
-        <td>
-          <div class="patient-info">
-            <div class="patient-avatar" style="background:${p.color || '#3b82f6'}">${getInitials(p.full_name)}</div>
-            <div>
-              <div class="patient-name">${p.full_name}</div>
-              <div class="patient-id">#PAT_${String(p.id).padStart(3, '0')}</div>
-            </div>
-          </div>
-        </td>
-        <td>${a.blood_pressure || '—'}</td>
-        <td style="color:${a.temperature >= 38 ? 'var(--risk-high)' : 'inherit'}">${a.temperature || '—'}</td>
-        <td style="color:${a.pulse >= 100 ? 'var(--risk-moderate)' : 'inherit'}">${a.pulse || '—'}</td>
-        <td style="color:${a.oxygen <= 92 ? 'var(--risk-critical)' : 'inherit'}">${a.oxygen ? a.oxygen + '%' : '—'}</td>
-        <td>
-          <span class="score-cell" style="color:${scoreColor(score)}">${score}</span>
-          <span style="color:var(--text-muted);font-size:0.7rem;">/100</span>
-        </td>
-        <td><span class="badge ${riskBadgeClass(risk)}">${riskLabel(risk)}</span></td>
-        <td style="text-align:center;"><i class="fa-solid fa-eye"></i></td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function scoreColor(s) {
-  if (typeof s !== 'number') return 'var(--text-muted)';
-  if (s >= 75) return 'var(--risk-critical)';
-  if (s >= 55) return 'var(--risk-high)';
-  if (s >= 35) return 'var(--risk-moderate)';
-  return 'var(--risk-low)';
-}
-
-export function initDashboard() {
-  // Row click → patient detail
+/**
+ * Bind row clicks, filters, logout, and critical-patient notifications.
+ */
+export async function initDashboard() {
   document.querySelectorAll('#patients-tbody tr[data-id]').forEach(row => {
     row.addEventListener('click', () => {
       window.location.hash = `#/patient/${row.dataset.id}`;
     });
   });
 
-  // Buttons
   document.getElementById('btn-new-patient')?.addEventListener('click', () => {
     window.location.hash = '#/form';
   });
 
   document.getElementById('btn-logout')?.addEventListener('click', () => {
     sessionStorage.removeItem('mcda_user');
+    sessionStorage.removeItem('mcda_token');
+    sessionStorage.removeItem('mcda_notified');
     window.location.hash = '#/login';
   });
 
-  // Search
   document.getElementById('search-input')?.addEventListener('input', e => {
     filterTable(e.target.value, document.querySelector('.filter-pill.active')?.dataset.filter || 'all');
   });
 
-  // Filter pills
   document.querySelectorAll('.filter-pill').forEach(pill => {
     pill.addEventListener('click', () => {
       document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
@@ -183,21 +188,37 @@ export function initDashboard() {
     });
   });
 
-  // Show critical notification on first dashboard load
   if (!sessionStorage.getItem('mcda_notified')) {
     sessionStorage.setItem('mcda_notified', '1');
     const criticalPatients = patients.filter(p =>
       p.mcdaResult && (p.mcdaResult.risk_level === 'Critical' || p.mcdaResult.risk_level === 'High')
     );
+
     if (criticalPatients.length > 0) {
       setTimeout(() => {
         showToast('critical', 'Внимание!', `Обнаружено ${criticalPatients.length} пациент(ов) в критическом состоянии`, 6000);
         setTimeout(() => showCriticalPatientsModal(criticalPatients), 1000);
       }, 500);
     }
+
+    try {
+      const notifications = await getNotifications(true);
+      if (notifications.length > 0 && criticalPatients.length === 0) {
+        const fromNotif = notifications.map(n => n.patient).filter(Boolean);
+        if (fromNotif.length > 0) {
+          setTimeout(() => showCriticalPatientsModal(fromNotif), 800);
+        }
+      }
+      await markAllNotificationsRead();
+    } catch {
+      // Non-critical if notifications fail
+    }
   }
 }
 
+/**
+ * Filter and re-render the patient table client-side.
+ */
 function filterTable(search, filter) {
   const searchLower = search.toLowerCase();
   let filtered = patients;
@@ -221,7 +242,6 @@ function filterTable(search, filter) {
 
   document.getElementById('patients-tbody').innerHTML = renderRows(filtered);
 
-  // Re-bind row clicks
   document.querySelectorAll('#patients-tbody tr[data-id]').forEach(row => {
     row.addEventListener('click', () => {
       window.location.hash = `#/patient/${row.dataset.id}`;

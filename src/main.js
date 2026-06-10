@@ -2,59 +2,58 @@
 // Main Entry Point & Router
 // ============================================
 
-import { runMCDA } from './utils/mcdaEngine.js';
-import { initializeResults } from './data/mockData.js';
 import { renderLogin, initLogin } from './views/login.js';
 import { renderDashboard, initDashboard } from './views/dashboard.js';
 import { renderPatientForm, initPatientForm } from './views/patientForm.js';
 import { renderPatientDetail, initPatientDetail } from './views/patientDetail.js';
 
-// Global export for mock engine to be used by mockData
-window.__mcdaEngine = { runMCDA };
-
 const routes = {
-    '/login': { render: renderLogin, init: initLogin },
-    '/dashboard': { render: renderDashboard, init: initDashboard },
-    '/form': { render: renderPatientForm, init: initPatientForm },
-    '/patient/:id': { render: renderPatientDetail, init: initPatientDetail },
+  '/login': { render: renderLogin, init: initLogin },
+  '/dashboard': { render: renderDashboard, init: initDashboard },
+  '/form': { render: renderPatientForm, init: initPatientForm },
+  '/patient/:id': { render: renderPatientDetail, init: initPatientDetail },
 };
 
-function router() {
-    const app = document.getElementById('app');
-    let hash = window.location.hash || '#/login';
+/**
+ * Resolve the current hash route and render the matching view.
+ */
+async function router() {
+  const app = document.getElementById('app');
+  let hash = window.location.hash || '#/login';
 
-    // Auth Check
-    const user = sessionStorage.getItem('mcda_user');
-    if (!user && hash !== '#/login') {
-        window.location.hash = '#/login';
-        return;
-    }
+  const user = sessionStorage.getItem('mcda_user');
+  if (!user && hash !== '#/login') {
+    window.location.hash = '#/login';
+    return;
+  }
 
-    // Parse route and ID
-    let view = null;
-    let params = {};
+  let view = null;
+  let params = {};
 
-    if (hash.startsWith('#/patient/')) {
-        view = routes['/patient/:id'];
-        params.id = hash.split('/')[2];
-    } else {
-        view = routes[hash.slice(1)];
-    }
+  if (hash.startsWith('#/patient/')) {
+    view = routes['/patient/:id'];
+    params.id = hash.split('/')[2];
+  } else {
+    view = routes[hash.slice(1)];
+  }
 
-    if (view) {
-        app.innerHTML = `<div class="route-transition animate-fade-up">${view.render(params.id)}</div>`;
-        view.init(params.id);
+  if (!view) {
+    window.location.hash = '#/login';
+    return;
+  }
 
-        // Ensure scroll to top on route change
-        window.scrollTo(0, 0);
-    } else {
-        window.location.hash = '#/login';
-    }
+  app.innerHTML = `<div class="route-transition animate-fade-up"><div class="loading-state">Загрузка...</div></div>`;
+
+  try {
+    const html = await view.render(params.id);
+    app.innerHTML = `<div class="route-transition animate-fade-up">${html}</div>`;
+    await view.init(params.id);
+    window.scrollTo(0, 0);
+  } catch (err) {
+    console.error(err);
+    app.innerHTML = `<div class="route-transition animate-fade-up"><div class="loading-state" style="color:var(--risk-critical)">Ошибка: ${err.message}</div></div>`;
+  }
 }
 
-// Initialize everything
 window.addEventListener('hashchange', router);
-window.addEventListener('DOMContentLoaded', () => {
-    initializeResults(); // Compute results for mock patients
-    router();
-});
+window.addEventListener('DOMContentLoaded', router);

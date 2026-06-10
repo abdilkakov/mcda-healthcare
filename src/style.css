@@ -989,6 +989,15 @@ body::before {
   }
 }
 
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
 @media (max-width: 768px) {
 
   .dashboard-content,

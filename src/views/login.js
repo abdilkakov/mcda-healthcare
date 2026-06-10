@@ -2,8 +2,11 @@
 // Login View
 // ============================================
 
-import { users } from '../data/mockData.js';
+import { login } from '../api/client.js';
 
+/**
+ * Render the login page HTML.
+ */
 export function renderLogin() {
   return `
     <div class="login-page">
@@ -45,26 +48,32 @@ export function renderLogin() {
   `;
 }
 
+/**
+ * Wire login form submission to the auth API.
+ */
 export function initLogin() {
   const form = document.getElementById('login-form');
   if (!form) return;
 
-  // Focus first input
   setTimeout(() => document.getElementById('login-username')?.focus(), 100);
 
-  form.addEventListener('submit', e => {
+  form.addEventListener('submit', async e => {
     e.preventDefault();
     const username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
+    const errEl = document.getElementById('login-error');
+    const submitBtn = form.querySelector('button[type="submit"]');
 
-    const user = users.find(u => u.login === username && u.password === password);
-    if (user) {
-      sessionStorage.setItem('mcda_user', JSON.stringify(user));
+    try {
+      submitBtn.disabled = true;
+      await login(username, password);
+      sessionStorage.removeItem('mcda_notified');
       window.location.hash = '#/dashboard';
-    } else {
-      const errEl = document.getElementById('login-error');
+    } catch {
       errEl.classList.add('visible');
       setTimeout(() => errEl.classList.remove('visible'), 3000);
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 }

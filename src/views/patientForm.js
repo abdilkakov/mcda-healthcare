@@ -2,11 +2,15 @@
 // Patient Form View
 // ============================================
 
-import { addPatient, symptoms } from '../data/mockData.js';
-import { runMCDA } from '../utils/mcdaEngine.js';
+import { getSymptoms, createPatient } from '../api/client.js';
 import { showToast } from '../components/notifications.js';
 
-export function renderPatientForm() {
+/**
+ * Fetch symptoms and render the patient registration form.
+ */
+export async function renderPatientForm() {
+  const symptoms = await getSymptoms();
+
   return `
     <div class="form-page">
       <div class="dot-grid"></div>
@@ -20,7 +24,6 @@ export function renderPatientForm() {
       </div>
 
       <form id="patient-form">
-        <!-- Section 1: Основные данные -->
         <div class="form-section glass-card">
           <h3><i class="fa-solid fa-user"></i> Основные данные</h3>
           <div class="section-divider"></div>
@@ -51,7 +54,6 @@ export function renderPatientForm() {
           </div>
         </div>
 
-        <!-- Section 2: Симптоматика -->
         <div class="form-section glass-card">
           <h3><i class="fa-solid fa-staff-snake"></i> Симптоматика и жалобы</h3>
           <div class="section-divider"></div>
@@ -75,7 +77,6 @@ export function renderPatientForm() {
           </div>
         </div>
 
-        <!-- Section 3: Показатели -->
         <div class="form-section glass-card">
           <h3><i class="fa-solid fa-chart-line"></i> Жизненные показатели</h3>
           <div class="section-divider"></div>
@@ -109,13 +110,16 @@ export function renderPatientForm() {
 
         <div class="form-actions">
           <button type="button" class="btn btn-outline" id="btn-cancel">Отмена</button>
-          <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Сохранить и провести анализ</button>
+          <button type="submit" class="btn btn-accent" id="btn-submit"><i class="fa-solid fa-floppy-disk"></i> Сохранить и провести анализ</button>
         </div>
       </form>
     </div>
   `;
 }
 
+/**
+ * Handle form submission — POST to API and navigate to patient detail.
+ */
 export function initPatientForm() {
   const form = document.getElementById('patient-form');
   if (!form) return;
@@ -123,9 +127,10 @@ export function initPatientForm() {
   document.getElementById('link-back-dash')?.addEventListener('click', () => window.location.hash = '#/dashboard');
   document.getElementById('btn-cancel')?.addEventListener('click', () => window.location.hash = '#/dashboard');
 
-  form.addEventListener('submit', e => {
+  form.addEventListener('submit', async e => {
     e.preventDefault();
     const formData = new FormData(form);
+    const submitBtn = document.getElementById('btn-submit');
 
     const selectedSymptoms = [];
     form.querySelectorAll('input[name="symptom"]:checked').forEach(cb => {
@@ -137,14 +142,14 @@ export function initPatientForm() {
       severities[id] = parseInt(form.querySelector(`input[name="sev-${id}"]`).value);
     });
 
-    const patientData = {
+    const payload = {
       full_name: formData.get('full_name'),
       iin: formData.get('iin'),
       birth_date: formData.get('birth_date'),
       gender: formData.get('gender'),
       phone: formData.get('phone'),
       symptoms: selectedSymptoms,
-      severities: severities,
+      severities,
       assessment: {
         blood_pressure: formData.get('blood_pressure'),
         temperature: parseFloat(formData.get('temperature')),
@@ -152,18 +157,19 @@ export function initPatientForm() {
         oxygen: parseInt(formData.get('oxygen')),
         complaints: formData.get('complaints'),
         notes: formData.get('notes'),
-      }
+      },
     };
 
-    // Calculate MCDA immediately
-    patientData.mcdaResult = runMCDA(patientData);
-
-    const newPatient = addPatient(patientData);
-
-    showToast('success', 'Успех', 'Данные пациента сохранены. Анализ завершён.');
-
-    setTimeout(() => {
-      window.location.hash = `#/patient/${newPatient.id}`;
-    }, 1000);
+    try {
+      submitBtn.disabled = true;
+      const newPatient = await createPatient(payload);
+      showToast('success', 'Успех', 'Данные пациента сохранены. Анализ завершён.');
+      setTimeout(() => {
+        window.location.hash = `#/patient/${newPatient.id}`;
+      }, 1000);
+    } catch (err) {
+      showToast('warning', 'Ошибка', err.message);
+      submitBtn.disabled = false;
+    }
   });
 }

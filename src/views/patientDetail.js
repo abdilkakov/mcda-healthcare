@@ -2,11 +2,18 @@
 // Patient Detail View
 // ============================================
 
-import { getPatientById } from '../data/mockData.js';
+import { getPatient } from '../api/client.js';
 import { riskBadgeClass, riskLabel } from '../utils/mcdaEngine.js';
 
-export function renderPatientDetail(id) {
-  const p = getPatientById(id);
+let currentPatient = null;
+
+/**
+ * Fetch patient data and render the detail page HTML.
+ */
+export async function renderPatientDetail(id) {
+  const p = await getPatient(id);
+  currentPatient = p;
+
   if (!p) return `<div class="detail-page"><h1>Пациент не найден</h1></div>`;
 
   const r = p.mcdaResult;
@@ -32,7 +39,6 @@ export function renderPatientDetail(id) {
         </div>
       </div>
 
-      <!-- AI Summary Full Width -->
       <div class="ai-summary-section glass-card animate-fade-up" style="margin-bottom: 32px; animation-delay: 0.2s">
         <h3 style="color:var(--accent)"><i class="fa-solid fa-brain"></i> AI Executive Summary</h3>
         <div class="ai-summary-text">
@@ -41,7 +47,6 @@ export function renderPatientDetail(id) {
       </div>
 
       <div class="detail-grid animate-fade-up" style="animation-delay: 0.3s">
-        <!-- Radar Chart Side -->
         <div class="radar-section glass-card">
           <h3><i class="fa-solid fa-chart-line"></i> Анализ критериев</h3>
           <div class="radar-canvas-container">
@@ -61,7 +66,6 @@ export function renderPatientDetail(id) {
           </div>
         </div>
 
-        <!-- Evidence/Key Factors Side -->
         <div class="glass-card" style="padding: 32px;">
           <h3 style="margin-bottom: 24px; color:var(--accent)"><i class="fa-solid fa-list-check"></i> Ключевые факторы риска</h3>
           <div class="evidence-list">
@@ -79,7 +83,6 @@ export function renderPatientDetail(id) {
         </div>
       </div>
 
-      <!-- Recommendations -->
       <div style="margin-top:32px;">
          <h2 style="margin-bottom:16px;"><i class="fa-solid fa-clipboard-list"></i> Рекомендации и действия</h2>
          <div class="recommendations-grid">
@@ -92,7 +95,6 @@ export function renderPatientDetail(id) {
          </div>
       </div>
 
-      <!-- Raw Assessment Data -->
       <div style="margin-top:32px; padding:24px;" class="glass-card">
         <h3 style="margin-bottom:16px;"><i class="fa-solid fa-notes-medical"></i> Первичные данные обследования</h3>
         <div class="form-grid">
@@ -114,17 +116,21 @@ export function renderPatientDetail(id) {
   `;
 }
 
-export function initPatientDetail(id) {
+/**
+ * Bind back navigation and draw the radar chart canvas.
+ */
+export function initPatientDetail() {
   document.getElementById('link-back-dash-detail')?.addEventListener('click', () => window.location.hash = '#/dashboard');
 
-  const p = getPatientById(id);
-  if (!p || !p.mcdaResult) return;
+  if (!currentPatient?.mcdaResult) return;
 
-  // Draw Radar Chart manually on Canvas
   const canvas = document.getElementById('radar-chart');
-  if (canvas) drawRadar(canvas, p.mcdaResult.criterion_scores);
+  if (canvas) drawRadar(canvas, currentPatient.mcdaResult.criterion_scores);
 }
 
+/**
+ * Draw a radar chart of criterion scores on the given canvas element.
+ */
 function drawRadar(canvas, scores) {
   const ctx = canvas.getContext('2d');
   const centerX = canvas.width / 2;
@@ -134,7 +140,6 @@ function drawRadar(canvas, scores) {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Background circles
   ctx.strokeStyle = 'rgba(255,255,255,0.1)';
   ctx.lineWidth = 1;
   for (let i = 1; i <= 5; i++) {
@@ -143,7 +148,6 @@ function drawRadar(canvas, scores) {
     ctx.stroke();
   }
 
-  // Axi lines
   ctx.beginPath();
   for (let i = 0; i < numCriteria; i++) {
     const angle = (Math.PI * 2 * i) / numCriteria - Math.PI / 2;
@@ -152,13 +156,12 @@ function drawRadar(canvas, scores) {
   }
   ctx.stroke();
 
-  // Radar polygon
   const coords = scores.map((s, i) => {
     const angle = (Math.PI * 2 * i) / numCriteria - Math.PI / 2;
     const r = (radius * s.score) / 100;
     return {
       x: centerX + r * Math.cos(angle),
-      y: centerY + r * Math.sin(angle)
+      y: centerY + r * Math.sin(angle),
     };
   });
 
@@ -173,20 +176,17 @@ function drawRadar(canvas, scores) {
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Data points & Labels
   scores.forEach((s, i) => {
     const angle = (Math.PI * 2 * i) / numCriteria - Math.PI / 2;
     const r = (radius * s.score) / 100;
     const x = centerX + r * Math.cos(angle);
     const y = centerY + r * Math.sin(angle);
 
-    // Point
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(x, y, 4, 0, Math.PI * 2);
     ctx.fill();
 
-    // Text Label
     const lx = centerX + (radius + 20) * Math.cos(angle);
     const ly = centerY + (radius + 20) * Math.sin(angle);
     ctx.fillStyle = '#9ca3af';
