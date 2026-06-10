@@ -1,0 +1,5 @@
+__pycache__
+venv
+
+mock_patients.csv
+*.pkl

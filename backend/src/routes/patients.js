@@ -35,26 +35,31 @@ router.get('/:id', (req, res) => {
 /**
  * POST /api/patients — create patient, run MCDA, return saved record.
  */
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { full_name, iin, birth_date, gender, phone, symptoms, severities, assessment } = req.body;
 
   if (!full_name || !iin || !birth_date || !gender || !phone || !assessment) {
     return res.status(400).json({ error: 'Заполните все обязательные поля' });
   }
 
-  const patient = createPatientWithAssessment({
-    full_name,
-    iin,
-    birth_date,
-    gender,
-    phone,
-    symptoms: symptoms || [],
-    severities: severities || {},
-    assessment,
-    created_by: req.user.id,
-  });
+  try {
+    const patient = await createPatientWithAssessment({
+      full_name,
+      iin,
+      birth_date,
+      gender,
+      phone,
+      symptoms: symptoms || [],
+      severities: severities || {},
+      assessment,
+      created_by: req.user.id,
+    });
 
-  res.status(201).json({ patient });
+    res.status(201).json({ patient });
+  } catch (err) {
+    console.error('Error creating patient:', err);
+    res.status(500).json({ error: 'Ошибка при создании пациента' });
+  }
 });
 
 export default router;

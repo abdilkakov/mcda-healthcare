@@ -31,6 +31,10 @@ export async function renderPatientDetail(id) {
           <div class="uppercase" style="color:var(--accent); opacity:0.8; margin-bottom:4px;">Профиль пациента</div>
           <h1>${p.full_name}</h1>
           <div class="patient-meta">ID: #PAT_${String(p.id).padStart(3, '0')} | ИИН: ${p.iin} | ${p.gender}, ${p.birth_date}</div>
+
+          <div class="patient-diagnosis" style="margin-top: 12px; font-size: 1.1rem; font-weight: 600; color: var(--accent);">
+             <i class="fa-solid fa-stethoscope"></i> Диагноз: ${r?.possible_diagnosis || 'Не установлен'}
+          </div>
         </div>
         <div class="final-score-block">
           <div class="final-score-label">Итоговый балл</div>

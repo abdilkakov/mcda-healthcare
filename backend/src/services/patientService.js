@@ -5,6 +5,7 @@
 import db from '../db/database.js';
 import { criteria, avatarColors } from '../data/reference.js';
 import { runMCDA } from './mcdaEngine.js';
+import { getMLResults } from './mlService.js';
 
 /**
  * Add icon, colour, and weight metadata to stored criterion scores.
@@ -133,8 +134,24 @@ function createCriticalNotification(patientId, patientName, mcda) {
 /**
  * Persist patient, assessment, symptoms, MCDA result, and criterion scores in one transaction.
  */
-export function createPatientWithAssessment(data) {
+export async function createPatientWithAssessment(data) {
+  let mlResults = null;
+
+  // 1. Fetch ML results BEFORE entering the database transaction.
+  // Network requests should never live inside synchronous SQLite transaction blocks.
+  try {
+    const birthDate = new Date(data.birth_date);
+    const patientAge = new Date().getFullYear() - birthDate.getFullYear() || 30;
+
+    mlResults = await getMLResults(data.assessment, patientAge);
+  } catch (err) {
+    // If the ML service is down, log it and fall back to pure rule-based evaluation gracefully
+    console.warn('ML prediction service unavailable, falling back to rule-based engine:', err.message);
+  }
+
+  // 2. Execute all database inserts atomically within a single transaction block
   const createTx = db.transaction(() => {
+    // Insert Patient details
     const patientResult = db.prepare(`
       INSERT INTO patients (full_name, iin, birth_date, gender, phone, color, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -150,12 +167,14 @@ export function createPatientWithAssessment(data) {
 
     const patientId = patientResult.lastInsertRowid;
 
+    // Link Symptoms
     (data.symptoms || []).forEach(symptomId => {
       db.prepare(
         'INSERT INTO patient_symptoms (patient_id, symptom_id, severity) VALUES (?, ?, ?)'
       ).run(patientId, symptomId, data.severities?.[symptomId] || 5);
     });
 
+    // Link Vitals Assessment
     const a = data.assessment;
     const assessmentResult = db.prepare(`
       INSERT INTO assessments (patient_id, blood_pressure, temperature, pulse, oxygen, complaints, notes)
@@ -164,13 +183,15 @@ export function createPatientWithAssessment(data) {
 
     const assessmentId = assessmentResult.lastInsertRowid;
 
+    // 3. Process data using the hybrid engine (merges rule-set logic with ML arrays automatically)
     const patientPayload = {
       symptoms: data.symptoms || [],
       severities: data.severities || {},
       assessment: a,
     };
-    const mcda = runMCDA(patientPayload);
+    const mcda = runMCDA(patientPayload, mlResults);
 
+    // 4. Save the completely aggregated dashboard statistics directly
     const mcdaResult = db.prepare(`
       INSERT INTO mcda_results (patient_id, assessment_id, total_score, risk_level, possible_diagnosis, recommendation, recommendations, ai_summary)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -195,10 +216,12 @@ export function createPatientWithAssessment(data) {
 
     createCriticalNotification(patientId, data.full_name, mcda);
 
-    return patientId;
+    return { patientId };
   });
 
-  const patientId = createTx();
+  const { patientId } = createTx();
+
+  // Return the complete patient structure to the UI client
   return getPatientById(patientId);
 }
 
