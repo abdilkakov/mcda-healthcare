@@ -9,7 +9,12 @@ const API_BASE = `${window.location.origin}/api`;
  */
 async function request(path, options = {}) {
   const token = sessionStorage.getItem('mcda_token');
-  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  const headers = { ...options.headers };
+  
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
@@ -90,4 +95,63 @@ export async function getNotifications(unreadOnly = true) {
  */
 export async function markAllNotificationsRead() {
   return request('/notifications/read-all', { method: 'PATCH' });
+}
+
+/**
+ * Add a custom doctor recommendation.
+ */
+export async function addRecommendation(patientId, text) {
+  return request(`/patients/${patientId}/recommendations`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
+/**
+ * Vote for a recommendation (voteValue = 1 or -1).
+ */
+export async function voteRecommendation(patientId, recId, voteValue) {
+  return request(`/patients/${patientId}/recommendations/${recId}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ voteValue }),
+  });
+}
+
+/**
+ * Upload a document.
+ */
+export async function uploadDocument(patientId, file, isProtocol) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('is_protocol', isProtocol);
+
+  return request(`/patients/${patientId}/documents`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+/**
+ * Delete a document.
+ */
+export async function deleteDocument(patientId, docId) {
+  return request(`/patients/${patientId}/documents/${docId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Get all documents across all patients.
+ */
+export async function getAllDocuments() {
+  const data = await request('/patients/documents/all');
+  return data.documents;
+}
+
+/**
+ * Fetch TF-IDF ranked AI recommendations for a specific patient.
+ */
+export async function getAIRecommendations(id) {
+  const data = await request(`/patients/${id}/ai-recommendations`);
+  return data.recommendations || [];
 }

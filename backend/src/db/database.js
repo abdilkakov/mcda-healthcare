@@ -111,10 +111,71 @@ function runMigrations() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS patient_recommendations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      doctor_id INTEGER REFERENCES users(id),
+      text TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'human', -- 'ai' or 'human'
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS recommendation_votes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recommendation_id INTEGER NOT NULL REFERENCES patient_recommendations(id) ON DELETE CASCADE,
+      doctor_id INTEGER NOT NULL REFERENCES users(id),
+      vote_value INTEGER NOT NULL, -- 1 or -1
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(recommendation_id, doctor_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS patient_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      extracted_text TEXT,
+      extracted_data TEXT,
+      is_protocol INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_assessments_patient ON assessments(patient_id);
     CREATE INDEX IF NOT EXISTS idx_mcda_patient ON mcda_results(patient_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(is_read);
+    CREATE INDEX IF NOT EXISTS idx_recommendations_patient ON patient_recommendations(patient_id);
   `);
+
+  // Seed Mock Users
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  if (userCount === 0) {
+    const insertUser = db.prepare(`
+      INSERT INTO users (full_name, email, login, password_hash, role) 
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    insertUser.run('Dr. Smith (Cardiologist)', 'smith@mcda.kz', 'smith', 'hash', 'doctor');
+    insertUser.run('Dr. Jones (Surgeon)', 'jones@mcda.kz', 'jones', 'hash', 'doctor');
+    insertUser.run('Nurse Kelly', 'kelly@mcda.kz', 'kelly', 'hash', 'nurse');
+  }
+
+  // Seed Global Patient (ID 0) for Knowledge Base documents
+  const globalPatient = db.prepare('SELECT id FROM patients WHERE id = 0').get();
+  if (!globalPatient) {
+    db.prepare(`
+      INSERT INTO patients (id, full_name, iin, birth_date, gender, phone, color, created_by)
+      VALUES (0, 'Knowledge Base', '000000000000', '2000-01-01', 'System', '000', '#222', 1)
+    `).run();
+  }
+  
+  // Migration: Add extracted_data to patient_documents if missing
+  try {
+    const tableInfo = db.prepare('PRAGMA table_info(patient_documents)').all();
+    if (!tableInfo.find(c => c.name === 'extracted_data')) {
+      db.prepare('ALTER TABLE patient_documents ADD COLUMN extracted_data TEXT').run();
+    }
+  } catch (err) {
+    console.error('Migration extracted_data failed:', err);
+  }
 }
 
 runMigrations();

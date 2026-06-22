@@ -101,32 +101,66 @@ export async function getMLResults(assessment, patientAge) {
 //   }
 // }
 
-// /**
-//  * Send a document (as a Buffer) to the ML service for OCR parsing.
-//  *
-//  * Returns { raw_text, extracted_data } on success, or null on failure.
-//  */
-// export async function parseDocument(fileBuffer, filename) {
-//   try {
-//     // Build multipart form data manually using the Fetch API + FormData
-//     const { FormData, Blob } = await import('node:buffer');
-//     const formData = new globalThis.FormData();
-//     const blob = new Blob([fileBuffer]);
-//     formData.append('file', blob, filename);
+/**
+ * Send a document (as a Buffer) to the ML service for OCR parsing.
+ * Returns { raw_text, extracted_data } on success, or null on failure.
+ */
+export async function parseDocument(fileBuffer, filename) {
+  try {
+    const formData = new FormData();
+    
+    let type = 'application/octet-stream';
+    const lowerName = filename.toLowerCase();
+    if (lowerName.endsWith('.pdf')) type = 'application/pdf';
+    else if (lowerName.endsWith('.docx')) type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    else if (lowerName.endsWith('.txt') || lowerName.endsWith('.md')) type = 'text/plain';
 
-//     const res = await fetch(`${ML_SERVICE_URL}/parse-document`, {
-//       method: 'POST',
-//       body: formData,
-//     });
+    const blob = new Blob([fileBuffer], { type });
+    formData.append('file', blob, filename);
 
-//     if (!res.ok) {
-//       console.warn(`ML document parse returned ${res.status}`);
-//       return null;
-//     }
+    const res = await fetch(`${ML_SERVICE_URL}/parse-document`, {
+      method: 'POST',
+      body: formData,
+    });
 
-//     return await res.json();
-//   } catch (err) {
-//     console.warn('ML document parse unavailable:', err.message);
-//     return null;
-//   }
-// }
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch(e) {
+      console.warn('Failed to parse ML response as JSON:', text.substring(0, 200));
+      return null;
+    }
+    
+    return data;
+  } catch (err) {
+    console.warn('ML parsing failed:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Send patient context and knowledge base sentences to the ML engine to compute semantic similarity via TF-IDF.
+ */
+export async function matchRecommendations(patientContext, documents) {
+  try {
+    const res = await fetch(`${ML_SERVICE_URL}/match-recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_context: patientContext,
+        documents: documents
+      }),
+    });
+    
+    if (!res.ok) {
+      console.warn(`ML /match-recommendations returned ${res.status}`);
+      return null;
+    }
+    
+    return await res.json();
+  } catch(err) {
+    console.warn(`ML /match-recommendations unavailable:`, err.message);
+    return null;
+  }
+}

@@ -92,6 +92,9 @@ export function formatPatient(patientRow) {
   const { symptoms, severities } = getPatientSymptoms(patientRow.id);
   const mcdaResult = assessment ? getMcdaResult(assessment.id) : null;
 
+  const recommendations = getPatientRecommendations(patientRow.id);
+  const documents = getPatientDocuments(patientRow.id);
+
   return {
     id: patientRow.id,
     full_name: patientRow.full_name,
@@ -113,6 +116,8 @@ export function formatPatient(patientRow) {
       notes: assessment.notes,
     } : null,
     mcdaResult,
+    recommendations,
+    documents,
   };
 }
 
@@ -214,6 +219,11 @@ export async function createPatientWithAssessment(data) {
       insertScore.run(resultId, cs.criterion_id, cs.score, cs.weighted_score);
     });
 
+    const insertRec = db.prepare('INSERT INTO patient_recommendations (patient_id, text, type) VALUES (?, ?, ?)');
+    mcda.recommendation.forEach(rec => {
+      insertRec.run(patientId, rec.text, 'ai');
+    });
+
     createCriticalNotification(patientId, data.full_name, mcda);
 
     return { patientId };
@@ -229,7 +239,7 @@ export async function createPatientWithAssessment(data) {
  * Return all patients with their latest assessment and MCDA result.
  */
 export function getAllPatients() {
-  const rows = db.prepare('SELECT * FROM patients ORDER BY id ASC').all();
+  const rows = db.prepare('SELECT * FROM patients WHERE id > 0 ORDER BY id ASC').all();
   return rows.map(formatPatient);
 }
 
@@ -258,4 +268,87 @@ export function getDashboardStats(patients) {
   });
 
   return { total: patients.length, critical, stable, moderate };
+}
+
+/**
+ * Recommendations & Voting
+ */
+export function getPatientRecommendations(patientId) {
+  return db.prepare(`
+    SELECT pr.*, u.full_name as doctor_name, u.role as doctor_role,
+           COALESCE(SUM(rv.vote_value), 0) as total_votes
+    FROM patient_recommendations pr
+    LEFT JOIN users u ON pr.doctor_id = u.id
+    LEFT JOIN recommendation_votes rv ON pr.id = rv.recommendation_id
+    WHERE pr.patient_id = ?
+    GROUP BY pr.id
+    ORDER BY total_votes DESC, pr.created_at DESC
+  `).all(patientId);
+}
+
+export function addRecommendation(patientId, doctorId, text) {
+  const result = db.prepare(`
+    INSERT INTO patient_recommendations (patient_id, doctor_id, text, type)
+    VALUES (?, ?, ?, 'human')
+  `).run(patientId, doctorId, text);
+  return result.lastInsertRowid;
+}
+
+export function voteRecommendation(recommendationId, doctorId, voteValue) {
+  db.prepare(`
+    INSERT INTO recommendation_votes (recommendation_id, doctor_id, vote_value)
+    VALUES (?, ?, ?)
+    ON CONFLICT(recommendation_id, doctor_id) DO UPDATE SET vote_value = excluded.vote_value
+  `).run(recommendationId, doctorId, voteValue);
+}
+
+/**
+ * Documents
+ */
+export function getPatientDocuments(patientId) {
+  const docs = db.prepare('SELECT * FROM patient_documents WHERE patient_id = ? ORDER BY created_at DESC').all(patientId);
+  return docs.map(d => {
+    if (d.extracted_data) {
+      try { d.extracted_data = JSON.parse(d.extracted_data); } catch(e) {}
+    }
+    return d;
+  });
+}
+
+export function getAllDocuments() {
+  const docs = db.prepare(`
+    SELECT pd.*, p.full_name as patient_name 
+    FROM patient_documents pd
+    LEFT JOIN patients p ON pd.patient_id = p.id
+    ORDER BY pd.created_at DESC
+  `).all();
+  return docs.map(d => {
+    if (d.extracted_data) {
+      try { d.extracted_data = JSON.parse(d.extracted_data); } catch(e) {}
+    }
+    return d;
+  });
+}
+
+export function saveDocument(patientId, filename, filePath, isProtocol, extractedText, extractedData) {
+  const dataStr = extractedData ? JSON.stringify(extractedData) : null;
+  const result = db.prepare(`
+    INSERT INTO patient_documents (patient_id, filename, file_path, is_protocol, extracted_text, extracted_data)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(patientId, filename, filePath, isProtocol, extractedText, dataStr);
+  return result.lastInsertRowid;
+}
+
+export function deleteDocument(docId, patientId) {
+  const doc = db.prepare('SELECT file_path FROM patient_documents WHERE id = ? AND patient_id = ?').get(docId, patientId);
+  if (doc) {
+    try {
+      import('fs').then(fs => fs.unlinkSync(doc.file_path));
+    } catch(err) {
+      console.warn('Failed to delete physical file:', err.message);
+    }
+    db.prepare('DELETE FROM patient_documents WHERE id = ?').run(docId);
+    return true;
+  }
+  return false;
 }

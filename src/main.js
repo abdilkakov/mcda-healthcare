@@ -6,12 +6,14 @@ import { renderLogin, initLogin } from './views/login.js';
 import { renderDashboard, initDashboard } from './views/dashboard.js';
 import { renderPatientForm, initPatientForm } from './views/patientForm.js';
 import { renderPatientDetail, initPatientDetail } from './views/patientDetail.js';
+import { renderDocumentsDashboard, initDocumentsDashboard } from './views/documentsDashboard.js';
 
 const routes = {
   '/login': { render: renderLogin, init: initLogin },
   '/dashboard': { render: renderDashboard, init: initDashboard },
   '/form': { render: renderPatientForm, init: initPatientForm },
   '/patient/:id': { render: renderPatientDetail, init: initPatientDetail },
+  '/documents': { render: renderDocumentsDashboard, init: initDocumentsDashboard },
 };
 
 /**

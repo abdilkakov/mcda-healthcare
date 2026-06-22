@@ -82,6 +82,7 @@ export async function renderDashboard() {
           <div class="logo-text">MCDA<span>Healthcare | Dashboard</span></div>
         </div>
         <div class="topbar-actions">
+          <button class="btn btn-outline" id="btn-documents-dashboard"><i class="fa-solid fa-book-medical"></i> База знаний</button>
           <button class="btn btn-accent" id="btn-new-patient"><i class="fa-solid fa-plus"></i> Новый пациент</button>
           <button class="btn btn-outline" id="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Выход</button>
         </div>
@@ -166,6 +167,10 @@ export async function initDashboard() {
 
   document.getElementById('btn-new-patient')?.addEventListener('click', () => {
     window.location.hash = '#/form';
+  });
+
+  document.getElementById('btn-documents-dashboard')?.addEventListener('click', () => {
+    window.location.hash = '#/documents';
   });
 
   document.getElementById('btn-logout')?.addEventListener('click', () => {

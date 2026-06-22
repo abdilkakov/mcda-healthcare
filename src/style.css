@@ -799,6 +799,118 @@ body::before {
   gap: 20px;
 }
 
+/* ---------- Documents Dashboard ---------- */
+.docs-layout {
+  display: flex;
+  height: calc(100vh - 93px);
+  overflow: hidden;
+}
+
+.docs-sidebar {
+  width: 320px;
+  background: rgba(10, 13, 20, 0.8);
+  border-right: 1px solid var(--bg-card-border);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.docs-sidebar.collapsed {
+  width: 0;
+  border-right: none;
+}
+
+.docs-sidebar-right {
+  width: 380px;
+  background: rgba(10, 13, 20, 0.8);
+  border-left: 1px solid var(--bg-card-border);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.docs-sidebar-right.collapsed {
+  width: 0;
+  border-left: none;
+}
+
+.docs-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+  background: var(--bg-deep);
+  position: relative;
+}
+
+.docs-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--bg-card-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  background: rgba(10, 13, 20, 0.95);
+  z-index: 10;
+}
+
+.doc-list-group {
+  padding: 16px;
+}
+
+.doc-list-group h4 {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-list-item {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+}
+
+.doc-list-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.doc-list-item.active {
+  background: rgba(200, 255, 0, 0.1);
+  border-color: rgba(200, 255, 0, 0.3);
+  color: var(--accent);
+}
+
+.doc-content {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--bg-card-border);
+  border-radius: var(--radius-md);
+  padding: 32px;
+  min-height: 600px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  font-family: 'Inter', sans-serif;
+}
+
+.highlight-medical {
+  background: rgba(200, 255, 0, 0.2);
+  color: var(--accent);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
 .checkbox-card {
   padding: 24px;
   background: rgba(255, 255, 255, 0.03);
@@ -914,6 +1026,25 @@ body::before {
 #modal-overlay.active {
   visibility: visible;
   opacity: 1;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .modal {

@@ -1,14 +1,18 @@
 import io
 import os
+import re
 import numpy as np
 import pandas as pd
 import joblib
-import easyocr
+import joblib
+from markitdown import MarkItDown
 import shap
-from PIL import Image
+import tempfile
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 app = FastAPI(title="MCDA Healthcare ML Service")
 
@@ -29,6 +33,10 @@ class AssessmentInput(BaseModel):
     oxygen_saturation: int
     pain_scale: int
 
+class MatchRequest(BaseModel):
+    patient_context: str
+    documents: list[dict]
+
 # 1. Load the pre-trained ML models on startup
 base_dir = os.path.dirname(__file__)
 try:
@@ -45,11 +53,10 @@ except Exception as e:
     print(f"CRITICAL WARNING: Dependency models failed to compile or load: {e}")
     triage_model = diagnosis_model = recommendation_model = explainer = triage_encoder = actions_binarizer = None
 
-# 2. Initialize EasyOCR reader on startup (supports Russian + English)
-# The models are downloaded once and cached locally.
-print("Loading EasyOCR models (first run will download ~100MB)...")
-ocr_reader = easyocr.Reader(['ru', 'en'], gpu=False)
-print("EasyOCR ready.")
+# 2. Initialize MarkItDown reader on startup
+print("Initializing MarkItDown...")
+md_parser = MarkItDown()
+print("MarkItDown ready.")
 
 # 3. Define the expected input schema for Triage
 @app.get("/")
@@ -129,32 +136,39 @@ def get_recommendation(assessment: AssessmentInput):
     
 
 
-# 7. Document OCR & Parsing Endpoint (EasyOCR)
+# 7. Document Parsing Endpoint (MarkItDown)
 @app.post("/parse-document")
 async def parse_document(file: UploadFile = File(...)):
-    # Read the file contents
-    contents = await file.read()
-    
     try:
-        # Open the image using Pillow and convert to numpy array for EasyOCR
-        image = Image.open(io.BytesIO(contents))
-        image_np = np.array(image)
+        print(f"Parsing document: {file.filename}, content_type: {file.content_type}")
+        # MarkItDown relies on file extensions to determine the parser type
+        suffix = os.path.splitext(file.filename)[1].lower()
+        if not suffix:
+            # Fallback based on content type or just assume pdf
+            if file.content_type == 'application/pdf':
+                suffix = '.pdf'
+            elif file.content_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']:
+                suffix = '.docx'
+            else:
+                suffix = '.txt'
+                
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            contents = await file.read()
+            tmp.write(contents)
+            tmp_path = tmp.name
+
+        try:
+            # Convert file to Markdown
+            result = md_parser.convert(tmp_path)
+            extracted_text = result.text_content
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
         
-        # Run EasyOCR — returns list of (bbox, text, confidence) tuples
-        results = ocr_reader.readtext(image_np)
-        
-        # Combine all detected text fragments into a single string
-        extracted_text = "\n".join([text for (_, text, _) in results])
-        
-        # Build a detailed result with confidence scores per text block
-        text_blocks = [
-            {"text": text, "confidence": round(float(conf), 3)}
-            for (_, text, conf) in results
-        ]
-        
-        # Placeholder NLP extraction (keyword-based for now)
-        # In the future, replace with SpaCy NER or a trained model
+        # NLP Extraction for Treatment Recommendations
         text_lower = extracted_text.lower()
+        
+        # 1. Basic Keyword/Diagnosis mapping
         mock_diagnosis = "Unknown"
         if "диабет" in text_lower or "diabetes" in text_lower:
             mock_diagnosis = "Diabetes"
@@ -163,19 +177,93 @@ async def parse_document(file: UploadFile = File(...)):
         elif "пневмония" in text_lower or "pneumonia" in text_lower:
             mock_diagnosis = "Pneumonia"
             
+        # 2. Extract Sentences with clinical recommendation keywords
+        # Split text into sentences using simple regex on punctuation
+        sentences = re.split(r'(?<=[.!?])\s+', extracted_text)
+        
+        target_keywords = [
+            "рекомендуется", "рекомендовано", "обязательно", 
+            "назначить", "treatment", "must", "должен", "терапия", "показано"
+        ]
+        
+        recommended_sentences = []
+        for sentence in sentences:
+            s_lower = sentence.lower()
+            if any(k in s_lower for k in target_keywords):
+                # Clean up newlines and extra spaces
+                clean_sentence = " ".join(sentence.split())
+                if len(clean_sentence) > 10: # Ignore very short artifacts
+                    recommended_sentences.append(clean_sentence)
+            
         return {
             "status": "success",
             "filename": file.filename,
             "raw_text": extracted_text,
-            "text_blocks": text_blocks,
+            "text_blocks": [{"text": extracted_text, "confidence": 1.0}],
             "extracted_data": {
                 "diagnosis_hint": mock_diagnosis,
-                "notes": "Full NLP extraction pending real training data."
+                "recommended_sentences": recommended_sentences,
+                "notes": "NLP Extracted treatment sentences successfully."
             }
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Return 200 with error details instead of 500 so UI doesn't completely fail
+        return {
+            "status": "error",
+            "filename": file.filename,
+            "raw_text": f"Error extracting text: {str(e)}",
+            "extracted_data": {"notes": "Extraction failed"}
+        }
+
+@app.post("/match-recommendations")
+async def match_recommendations(req: MatchRequest):
+    try:
+        if not req.patient_context or not req.documents:
+            return {"recommendations": []}
+
+        candidate_sentences = []
+        sources = []
+        for doc in req.documents:
+            for s in doc.get("sentences", []):
+                candidate_sentences.append(s)
+                sources.append(doc.get("filename", "Глобальная база"))
+
+        if not candidate_sentences:
+            return {"recommendations": []}
+
+        # Vectorize using TF-IDF
+        vectorizer = TfidfVectorizer()
+        all_texts = [req.patient_context] + candidate_sentences
+        tfidf_matrix = vectorizer.fit_transform(all_texts)
+        
+        patient_vec = tfidf_matrix[0]
+        sentence_vecs = tfidf_matrix[1:]
+
+        # Compute cosine similarities
+        similarities = cosine_similarity(patient_vec, sentence_vecs)[0]
+
+        # Filter and rank (threshold 0.02 to allow short sentence overlaps)
+        threshold = 0.02
+        results = []
+        for i, score in enumerate(similarities):
+            if score >= threshold:
+                results.append({
+                    "text": candidate_sentences[i],
+                    "source": f"Глобальная база: {sources[i]}",
+                    "score": round(float(score) * 100, 1)
+                })
+
+        # Sort by highest score first
+        results.sort(key=lambda x: x["score"], reverse=True)
+
+        return {"recommendations": results[:20]}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
